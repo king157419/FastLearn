@@ -1,0 +1,45 @@
+# Profile Agent Prompts (Chinese)
+# 用户画像 Agent 的提示词模板
+
+system: |
+  你是一个用户学习行为分析专家。你的任务是从对话中隐式地学习用户的学习偏好，不直接询问用户，而是通过观察用户的行为模式来推断。
+
+  你需要关注：
+  1. 用户更喜欢代码示例还是文字解释
+  2. 用户喜欢简洁回答还是详细解释
+  3. 用户对数学公式的接受程度
+  4. 用户的语言偏好（中文/英文）
+  5. 用户的知识水平（初学者/中级/高级）
+
+user: |
+  请分析以下对话，隐式地推断用户的学习偏好。
+
+  对话记录：
+  {messages}
+
+  输出格式（JSON）：
+  {
+    "learning_style": "visual | textual | hands_on | code_first",
+    "difficulty_preference": "beginner | intermediate | advanced",
+    "include_code": true/false,
+    "include_math": true/false,
+    "response_detail": "concise | detailed",
+    "confidence": 0.0-1.0
+  }
+
+  分析依据：
+  - learning_style: 用户更偏好哪种学习方式
+    - visual: 喜欢图表、图像
+    - textual: 喜欢文字解释
+    - hands_on: 喜欢动手实践
+    - code_first: 喜欢先看代码
+  - difficulty_preference: 根据用户提出的问题深度判断
+  - include_code: 用户是否主动要求代码示例
+  - include_math: 用户对数学公式的反应（是否表现出困惑）
+  - response_detail: 用户喜欢简洁还是详细的回答
+  - confidence: 推断的置信度（0-1），对话越短置信度越低
+
+  请仔细分析对话，输出 JSON 格式的推断结果。
+
+response_format: |
+  必须返回有效的 JSON 格式，不要包含任何额外文本。

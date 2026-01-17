@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker:*)",
+      "Bash(docker-compose:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(curl:*)",
+      "Bash(findstr:*)",
+      "Bash(dir:*)",
+      "Bash(npm run dev)",
+      "Bash(taskkill:*)",
+      "Bash(netstat:*)",
+      "Bash(timeout:*)",
+      "Bash(set PYTHONIOENCODING=utf-8:*)",
+      "Bash(set:*)",
+      "Bash(npm run dev:*)",
+      "Bash(del:*)",
+      "Bash(if exist \"D:\\\\DeepTutor\\\\web\\\\.next\\\\dev\\\\lock\" del /F \"D:\\\\DeepTutor\\\\web\\\\.next\\\\dev\\\\lock\")",
+      "Bash(psql:*)",
+      "Bash(tasklist:*)",
+      "Bash(cmd:*)",
+      "Bash(ping:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
