@@ -6,6 +6,7 @@ This agent provides:
 - Multi-turn conversation with history management
 - Token-based context truncation
 - Optional RAG and Web Search augmentation
+- Memory System integration for cross-session context
 - Streaming response generation
 
 Uses the unified LLM factory from BaseAgent for both cloud and local LLM support.
@@ -43,6 +44,9 @@ class ChatAgent(BaseAgent):
         language: str = "zh",
         config: dict[str, Any] | None = None,
         max_history_tokens: int | None = None,
+        user_id: str | None = None,
+        session_id: str | None = None,
+        enable_memory: bool = True,
         **kwargs,
     ):
         """
@@ -52,6 +56,9 @@ class ChatAgent(BaseAgent):
             language: Language setting ('zh' | 'en')
             config: Optional configuration dictionary
             max_history_tokens: Maximum tokens for conversation history
+            user_id: User ID for memory system
+            session_id: Session ID for memory tracking
+            enable_memory: Whether to enable memory system
             **kwargs: Additional arguments passed to BaseAgent
         """
         super().__init__(
@@ -67,7 +74,13 @@ class ChatAgent(BaseAgent):
             "max_history_tokens", self.DEFAULT_MAX_HISTORY_TOKENS
         )
 
-        self.logger.info(f"ChatAgent initialized: model={self.model}, base_url={self.base_url}")
+        # Memory system configuration
+        self.user_id = user_id
+        self.session_id = session_id
+        self.enable_memory = enable_memory
+        self._memory_context = ""
+
+        self.logger.info(f"ChatAgent initialized: model={self.model}, base_url={self.base_url}, memory={enable_memory}")
 
     def count_tokens(self, text: str) -> int:
         """
@@ -168,7 +181,7 @@ class ChatAgent(BaseAgent):
         enable_web_search: bool = False,
     ) -> tuple[str, dict[str, Any]]:
         """
-        Retrieve context from RAG and/or Web Search.
+        Retrieve context from Memory, RAG and/or Web Search.
 
         Args:
             message: User message to search for
@@ -180,7 +193,31 @@ class ChatAgent(BaseAgent):
             Tuple of (context_string, sources_dict)
         """
         context_parts = []
-        sources = {"rag": [], "web": []}
+        sources = {"memory": [], "rag": [], "web": []}
+
+        # Memory retrieval (highest priority)
+        if self.enable_memory and self.user_id:
+            try:
+                self.logger.info(f"Memory retrieval for user {self.user_id}: {message[:50]}...")
+                from src.agents.memory import get_memory_context
+
+                memory_context = await get_memory_context(
+                    user_id=self.user_id,
+                    query=message,
+                    days=7  # 检索最近7天的记忆
+                )
+                self._memory_context = memory_context
+
+                if memory_context and len(memory_context) > 50:
+                    context_parts.append(f"[Cross-Session Memory]\n{memory_context}")
+                    sources["memory"].append({
+                        "type": "cross_session_memory",
+                        "days": 7,
+                        "preview": memory_context[:200] + "..." if len(memory_context) > 200 else memory_context
+                    })
+                    self.logger.info(f"Memory retrieved {len(memory_context)} chars")
+            except Exception as e:
+                self.logger.warning(f"Memory retrieval failed: {e}")
 
         # RAG retrieval
         if enable_rag and kb_name:
@@ -368,6 +405,8 @@ class ChatAgent(BaseAgent):
         enable_rag: bool = False,
         enable_web_search: bool = False,
         stream: bool = False,
+        user_id: str | None = None,
+        session_id: str | None = None,
     ) -> dict[str, Any] | AsyncGenerator[dict[str, Any], None]:
         """
         Process a chat message with optional context retrieval.
@@ -379,12 +418,20 @@ class ChatAgent(BaseAgent):
             enable_rag: Whether to enable RAG retrieval
             enable_web_search: Whether to enable web search
             stream: Whether to stream the response
+            user_id: User ID for memory system
+            session_id: Session ID for memory tracking
 
         Returns:
             If stream=False: Dict with 'response', 'sources', 'truncated_history'
             If stream=True: AsyncGenerator yielding chunks
         """
         history = history or []
+
+        # Update user_id and session_id if provided
+        if user_id:
+            self.user_id = user_id
+        if session_id:
+            self.session_id = session_id
 
         # Truncate history to fit token limit
         truncated_history = self.truncate_history(history)
@@ -430,6 +477,37 @@ class ChatAgent(BaseAgent):
                 "sources": sources,
                 "truncated_history": truncated_history,
             }
+
+    async def end_session(self, history: list[dict[str, str]]) -> dict[str, Any]:
+        """
+        End a chat session and trigger summary generation if needed.
+
+        Args:
+            history: Complete conversation history
+
+        Returns:
+            Dict with summary result
+        """
+        if not self.enable_memory or not self.user_id or not self.session_id:
+            return {"success": False, "message": "Memory not enabled or missing user/session ID"}
+
+        try:
+            from src.agents.memory import summarize_session
+
+            # Trigger session summary (will check if threshold met)
+            result = await summarize_session(
+                session_id=self.session_id,
+                user_id=self.user_id,
+                messages=history,
+                force=False  # Only summarize if threshold met
+            )
+
+            self.logger.info(f"Session end processed: should_summarize={result.get('should_summarize', False)}")
+            return result
+
+        except Exception as e:
+            self.logger.warning(f"Session end processing failed: {e}")
+            return {"success": False, "message": str(e)}
 
 
 __all__ = ["ChatAgent"]

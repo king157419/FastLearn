@@ -17,6 +17,22 @@ import {
 
 // Language storage key
 const LANGUAGE_STORAGE_KEY = "deeptutor-language";
+const USER_ID_STORAGE_KEY = "deeptutor-user-id";
+
+// Get or generate user ID
+const getOrGenerateUserId = (): string => {
+  if (typeof window === "undefined") return "default_user";
+  try {
+    let userId = localStorage.getItem(USER_ID_STORAGE_KEY);
+    if (!userId) {
+      userId = `user_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+      localStorage.setItem(USER_ID_STORAGE_KEY, userId);
+    }
+    return userId;
+  } catch {
+    return "default_user";
+  }
+};
 
 // --- Types ---
 interface LogEntry {
@@ -214,6 +230,7 @@ interface IdeaGenState {
 
 // Chat Types
 interface ChatSource {
+  memory?: Array<{ type: string; days?: number; preview?: string }>;
   rag?: Array<{ kb_name: string; content: string }>;
   web?: Array<{ url: string; title?: string; snippet?: string }>;
 }
@@ -227,6 +244,7 @@ interface HomeChatMessage {
 
 interface ChatState {
   sessionId: string | null;
+  userId: string;
   messages: HomeChatMessage[];
   isLoading: boolean;
   selectedKb: string;
@@ -1580,6 +1598,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   // --- Chat Logic ---
   const [chatState, setChatState] = useState<ChatState>({
     sessionId: null,
+    userId: "default_user",
     messages: [],
     isLoading: false,
     selectedKb: "",
@@ -1587,6 +1606,14 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     enableWebSearch: false,
     currentStage: null,
   });
+
+  // Initialize userId after mount
+  useEffect(() => {
+    const userId = getOrGenerateUserId();
+    if (userId !== chatState.userId) {
+      setChatState((prev) => ({ ...prev, userId }));
+    }
+  }, []);
   const chatWs = useRef<WebSocket | null>(null);
   // Use ref to always have the latest sessionId in WebSocket callbacks (avoid closure issues)
   const sessionIdRef = useRef<string | null>(null);
@@ -1624,6 +1651,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
           message,
           // Use ref to get the latest sessionId (avoids closure capturing stale state)
           session_id: sessionIdRef.current,
+          user_id: chatState.userId,
           history,
           kb_name: chatState.selectedKb,
           enable_rag: chatState.enableRag,
@@ -1675,7 +1703,11 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
           if (lastMessage?.role === "assistant") {
             messages[messages.length - 1] = {
               ...lastMessage,
-              sources: { rag: data.rag, web: data.web },
+              sources: {
+                memory: data.memory || [],
+                rag: data.rag || [],
+                web: data.web || [],
+              },
             };
           }
           return { ...prev, messages };

@@ -13,6 +13,7 @@ export const translations = {
     "Guided Learning": "Guided Learning",
     "Knowledge Bases": "Knowledge Bases",
     Notebooks: "Notebooks",
+    "Memory & Profile": "Memory & Profile",
     Settings: "Settings",
 
     // Common
@@ -151,6 +152,7 @@ export const translations = {
     "Guided Learning": "引导式学习",
     "Knowledge Bases": "知识库",
     Notebooks: "笔记本",
+    "Memory & Profile": "记忆与画像",
     Settings: "设置",
 
     // Common

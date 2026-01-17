@@ -83,6 +83,51 @@ async def delete_session(session_id: str):
     raise HTTPException(status_code=404, detail="Session not found")
 
 
+@router.post("/chat/sessions/{session_id}/end")
+async def end_session(session_id: str, user_id: str | None = None):
+    """
+    Manually trigger session end and summary generation.
+    Call this when user ends a chat session to save memory.
+
+    Args:
+        session_id: Session identifier
+        user_id: User ID for memory system
+
+    Returns:
+        Summary result
+    """
+    session = session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    messages = session.get("messages", [])
+
+    if not messages:
+        return {"status": "skipped", "message": "No messages to summarize"}
+
+    if not user_id or user_id == "default_user":
+        return {"status": "skipped", "message": "Invalid user_id for memory system"}
+
+    try:
+        from src.agents.memory import summarize_session
+
+        result = await summarize_session(
+            session_id=session_id,
+            user_id=user_id,
+            messages=messages,
+            force=True  # Force summary generation on manual call
+        )
+
+        return {
+            "status": "success",
+            "session_id": session_id,
+            **result
+        }
+    except Exception as e:
+        logger.error(f"Session end error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # =============================================================================
 # WebSocket Endpoint for Chat
 # =============================================================================
@@ -97,6 +142,7 @@ async def websocket_chat(websocket: WebSocket):
     {
         "message": str,              # User message
         "session_id": str | null,    # Session ID (null for new session)
+        "user_id": str | null,       # User ID for memory system
         "history": [...] | null,     # Optional: explicit history override
         "kb_name": str,              # Knowledge base name (for RAG)
         "enable_rag": bool,          # Enable RAG retrieval
@@ -116,23 +162,62 @@ async def websocket_chat(websocket: WebSocket):
     # Get system language for agent
     language = config.get("system", {}).get("language", "en")
 
+    # Track current session state (for memory system)
+    current_session_id = None
+    current_user_id = "default_user"
+
+    # Helper function to trigger session summary
+    async def trigger_summary(sid: str, uid: str):
+        """Trigger session summary in background"""
+        try:
+            session = session_manager.get_session(sid)
+            if not session:
+                return
+
+            messages = session.get("messages", [])
+            # Fast check before calling expensive summarizer
+            if not messages or uid == "default_user":
+                return
+
+            # Check if we have enough messages to possibly trigger summary
+            # Config: SUMMARY_TRIGGER_ROUNDS=3, so we need at least 6 messages (3 rounds)
+            if len(messages) < 6:
+                return  # Skip summary check, not enough messages
+
+            logger.info(f"Triggering session summary for {uid}, session {sid}")
+
+            from src.agents.memory import summarize_session
+            await summarize_session(
+                session_id=sid,
+                user_id=uid,
+                messages=messages,
+                force=False
+            )
+        except Exception as e:
+            logger.warning(f"Failed to trigger session summary: {e}")
+
     try:
         while True:
             # Receive message
             data = await websocket.receive_json()
             message = data.get("message", "").strip()
             session_id = data.get("session_id")
+            user_id = data.get("user_id", "default_user")  # For memory system
             explicit_history = data.get("history")  # Optional override
             kb_name = data.get("kb_name", "")
             enable_rag = data.get("enable_rag", False)
             enable_web_search = data.get("enable_web_search", False)
+
+            # Update tracked state
+            if user_id and user_id != "default_user":
+                current_user_id = user_id
 
             if not message:
                 await websocket.send_json({"type": "error", "message": "Message is required"})
                 continue
 
             logger.info(
-                f"Chat request: session={session_id}, "
+                f"Chat request: session={session_id}, user={user_id}, "
                 f"message={message[:50]}..., rag={enable_rag}, web={enable_web_search}"
             )
 
@@ -162,6 +247,9 @@ async def websocket_chat(websocket: WebSocket):
                         },
                     )
                     session_id = session["session_id"]
+
+                # Update tracked session ID
+                current_session_id = session_id
 
                 # Send session ID to frontend
                 await websocket.send_json(
@@ -205,9 +293,22 @@ async def websocket_chat(websocket: WebSocket):
                     api_key=api_key,
                     base_url=base_url,
                     api_version=api_version,
+                    user_id=user_id,
+                    session_id=session_id,
+                    enable_memory=True,
                 )
 
                 # Send status updates
+                # Memory status (if enabled)
+                if user_id != "default_user":
+                    await websocket.send_json(
+                        {
+                            "type": "status",
+                            "stage": "memory",
+                            "message": "Retrieving cross-session context...",
+                        }
+                    )
+
                 if enable_rag and kb_name:
                     await websocket.send_json(
                         {
@@ -236,7 +337,7 @@ async def websocket_chat(websocket: WebSocket):
 
                 # Process with streaming
                 full_response = ""
-                sources = {"rag": [], "web": []}
+                sources = {"memory": [], "rag": [], "web": []}
 
                 stream_generator = await agent.process(
                     message=message,
@@ -245,6 +346,8 @@ async def websocket_chat(websocket: WebSocket):
                     enable_rag=enable_rag,
                     enable_web_search=enable_web_search,
                     stream=True,
+                    user_id=user_id,
+                    session_id=session_id,
                 )
 
                 async for chunk_data in stream_generator:
@@ -288,6 +391,12 @@ async def websocket_chat(websocket: WebSocket):
 
     except WebSocketDisconnect:
         logger.debug("Client disconnected from chat")
+        # Trigger session summary when user disconnects
+        # This is where cross-session memory gets created
+        if current_session_id and current_user_id != "default_user":
+            import asyncio
+            asyncio.create_task(trigger_summary(current_session_id, current_user_id))
+
     except Exception as e:
         logger.error(f"WebSocket error: {e}")
         try:

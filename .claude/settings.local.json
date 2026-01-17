@@ -21,7 +21,12 @@
       "Bash(tasklist:*)",
       "Bash(cmd:*)",
       "Bash(ping:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(cd:*)",
+      "Bash(git -C \"D:\\\\DeepTutor\" remote -v)",
+      "Bash(git -C \"D:\\\\DeepTutor\" status)"
     ]
   }
 }

@@ -78,7 +78,7 @@ try:
     ]
 except ImportError as e:
     # If import fails (e.g., missing tiktoken), only export basic tools
-    print(f"⚠️  Some paper tools import failed: {e}")
+    print(f"WARNING: Some paper tools import failed: {e}")
     __all__ = [
         "query_numbered_item",
         "rag_search",

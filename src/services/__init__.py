@@ -42,15 +42,26 @@ Usage:
     result = web_search("What is AI?")
 """
 
-from . import config, embedding, llm, prompt, rag, search, setup, tts
+from . import config, embedding, llm, prompt, search, setup, tts
+
+# RAG 模块是可选的（需要 llama_index）
+try:
+    from . import rag
+    _rag_available = True
+except ImportError:
+    _rag_available = False
+    rag = None
 
 __all__ = [
     "llm",
     "embedding",
-    "rag",
     "prompt",
     "tts",
     "search",
     "setup",
     "config",
 ]
+
+# 只有当 rag 可用时才加入 __all__
+if _rag_available:
+    __all__.append("rag")

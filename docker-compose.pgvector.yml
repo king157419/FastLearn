@@ -1,0 +1,53 @@
+# DeepTutor Memory System - PostgreSQL with pgvector
+# 使用 Docker Compose 快速启动向量数据库
+
+version: '3.8'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: deeptutor-memory-db
+    environment:
+      POSTGRES_USER: deeptutor
+      POSTGRES_PASSWORD: deeptutor_password
+      POSTGRES_DB: deeptutor_memory
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    ports:
+      - "5433:5432"  # 映射到主机 5433 端口（避免冲突）
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d  # 自动执行迁移脚本
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U deeptutor"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    # macOS 性能优化
+    platform: linux/amd64
+
+  # 可选：pgAdmin（数据库管理工具）
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: deeptutor-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@deeptutor.ai
+      PGADMIN_DEFAULT_PASSWORD: pgadmin_password
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  default:
+    name: deeptutor-memory-network
