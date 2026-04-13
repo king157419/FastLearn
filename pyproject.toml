@@ -15,11 +15,11 @@ license = {text = "Apache-2.0"}
 
 # Optional dependencies for different LLM providers
 [project.optional-dependencies]
-anthropic = ["anthropic>=0.30.0"]
+anthropic = ["anthropic>=0.94.0"]
 dashscope = ["dashscope>=1.14.0"]
 search = ["perplexityai>=0.1.0"]
 all = [
-    "anthropic>=0.30.0",
+    "anthropic>=0.94.0",
     "dashscope>=1.14.0",
     "perplexityai>=0.1.0"
 ]
